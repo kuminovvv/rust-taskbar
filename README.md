@@ -14,15 +14,16 @@
 - Часы по локальному времени с таймером, синхронизированным на смену минуты.
 - Простая двойная буферизация GDI; отрисовка по WM_PAINT, без постоянного render-loop.
 - Учёт DPI основного монитора, кнопка Exit для выхода, автоматических системных изменений нет.
-- Unit-тесты геометрии кнопок и проверка сборки через GitHub Actions (Windows).
+- Unit-тесты геометрии кнопок и конфигурация GitHub Actions (Windows). **Успешная сборка пока не подтверждена.**
 
 ## Запуск
 
-Требования: Windows 11 x64, актуальный stable Rust (MSVC toolchain).
+Требования: Windows 11 x64, актуальный stable Rust (MSVC toolchain), **Visual Studio 2022 Build Tools с Desktop development with C++ и Windows SDK**. Установка одного пакета Build Tools без C++-компонентов недостаточна.
 
 ```powershell
 git clone https://github.com/kuminovvv/rust-taskbar.git
 cd rust-taskbar
+pwsh -NoProfile -File .\scripts\check-toolchain.ps1
 cargo run --release
 ```
 
@@ -45,7 +46,10 @@ cargo run --release
 - [Архитектура и риски](docs/ARCHITECTURE.md)
 - [План разработки](docs/ROADMAP.md)
 - [Тестирование MVP](docs/MVP_TEST_PLAN.md)
+- [Подготовка MSVC и исправление `link.exe not found`](docs/BUILD_WINDOWS.md)
 - [Первичные источники](docs/SOURCES.md)
 - [Правила для агентов](AGENTS.md)
+
+**Фактическое состояние на 18.11.2026:** исправлены четыре ошибки компиляции Rust (`987a921`), но последняя пользовательская сборка остановилась на `linker link.exe not found`. MSVC C++ workload необходимо доустановить или открыть Developer PowerShell. Успешный `cargo build`, запуск интерфейса и CI пока не подтверждены.
 
 **Цель**, а не подтверждённый результат: idle CPU ≤ 0,2 %, working set ≤ 40 МБ; в будущем — GPU-анимации, синхронизированные с монитором вплоть до 180 Гц. Фактические метрики пока не измерены. В первую очередь требуется собрать приложение на Windows 11 и провести smoke test.
