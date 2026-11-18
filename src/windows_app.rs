@@ -16,7 +16,8 @@ use windows_sys::Win32::UI::HiDpi::{
     GetDpiForWindow, SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
 };
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-    SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, VK_ESCAPE, VK_LWIN,
+    SendInput, TrackMouseEvent, TME_LEAVE, TRACKMOUSEEVENT, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT,
+    KEYEVENTF_KEYUP, VK_ESCAPE, VK_LWIN,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
