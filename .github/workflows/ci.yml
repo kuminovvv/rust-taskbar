@@ -14,6 +14,10 @@ jobs:
   windows:
     runs-on: windows-latest
     timeout-minutes: 20
+    # Prevent compile warnings (including accidental variable bindings in
+    # Win32 message match arms) from silently shipping.
+    env:
+      RUSTFLAGS: "-D warnings"
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
