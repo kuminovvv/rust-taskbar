@@ -82,7 +82,7 @@ pub fn run() -> Result<(), String> {
         let mut state = Box::<AppState>::default();
         let title = wide("Rust Taskbar (prototype)");
         let hwnd = CreateWindowExW(
-            WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
+            WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE,
             class_name.as_ptr(),
             title.as_ptr(),
             WS_POPUP,
@@ -115,7 +115,7 @@ pub fn run() -> Result<(), String> {
         position_window(hwnd, state.dpi);
         schedule_clock(hwnd);
 
-        ShowWindow(hwnd, SW_SHOWNORMAL);
+        ShowWindow(hwnd, SW_SHOWNOACTIVATE);
         UpdateWindow(hwnd);
 
         let mut message: MSG = zeroed();
