@@ -12,6 +12,7 @@ use windows_sys::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
 use windows_sys::Win32::Graphics::Gdi::*;
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::System::SystemInformation::GetLocalTime;
+use windows_sys::Win32::UI::Controls::WM_MOUSELEAVE;
 use windows_sys::Win32::UI::HiDpi::{
     GetDpiForWindow, SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
 };
