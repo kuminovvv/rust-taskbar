@@ -16,7 +16,7 @@ use windows_sys::Win32::UI::HiDpi::{
     GetDpiForWindow, SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
 };
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-    SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, VK_LWIN,
+    SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, VK_ESCAPE, VK_LWIN,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
@@ -156,7 +156,7 @@ unsafe extern "system" fn enumerate_window(hwnd: HWND, parameter: LPARAM) -> i32
     let mut cloaked: u32 = 0;
     if DwmGetWindowAttribute(
         hwnd,
-        DWMWA_CLOAKED,
+        DWMWA_CLOAKED as u32,
         (&mut cloaked as *mut u32).cast::<c_void>(),
         size_of::<u32>() as u32,
     ) >= 0
@@ -183,7 +183,7 @@ unsafe extern "system" fn enumerate_window(hwnd: HWND, parameter: LPARAM) -> i32
 }
 
 unsafe fn refresh_windows(hwnd: HWND, state: &mut AppState) {
-    let mut windows = Vec::with_capacity(32);
+    let mut windows: Vec<OpenWindow> = Vec::with_capacity(32);
     EnumWindows(Some(enumerate_window), (&mut windows as *mut Vec<OpenWindow>) as isize);
     // Only invalidate if contents have changed; activation highlighting is updated
     // separately after shell notifications.
@@ -381,7 +381,7 @@ unsafe fn draw_content(hdc: HDC, state: &AppState, width: i32, height: i32) {
     let text = rgb(230, 234, 246);
     let muted = rgb(170, 178, 192);
     fill(hdc, &RECT { left: 0, top: 0, right: width, bottom: height }, background);
-    SetBkMode(hdc, TRANSPARENT);
+    SetBkMode(hdc, TRANSPARENT as i32);
     let font = GetStockObject(DEFAULT_GUI_FONT);
     let old_font = SelectObject(hdc, font);
 
