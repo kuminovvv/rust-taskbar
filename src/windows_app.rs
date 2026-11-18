@@ -199,26 +199,26 @@ unsafe extern "system" fn enumerate_window(hwnd: HWND, parameter: LPARAM) -> i32
 /// Obtain a small icon without hanging if a target app stops responding.
 /// WM_GETICON is optional; class icons are used as a documented fallback.
 unsafe fn copy_window_icon(hwnd: HWND) -> Option<OwnedIcon> {
-    let mut raw: usize = 0;
-    for icon_kind in [2usize, 0usize, 1usize] {
+    // Prefer class metadata: no cross-process message and no wait on a busy UI
+    // thread. Only apps without a class icon require a bounded WM_GETICON call.
+    let mut raw = GetClassLongPtrW(hwnd, GCLP_HICONSM);
+    if raw == 0 {
+        raw = GetClassLongPtrW(hwnd, GCLP_HICON);
+    }
+    if raw == 0 {
+        let mut result: usize = 0;
         let delivered = SendMessageTimeoutW(
             hwnd,
             WM_GETICON,
-            icon_kind,
+            2, // ICON_SMALL2: high-DPI-aware small icon
             0,
             SMTO_ABORTIFHUNG | SMTO_BLOCK,
-            30,
-            &mut raw,
+            25,
+            &mut result,
         );
-        if delivered != 0 && raw != 0 {
-            break;
+        if delivered != 0 {
+            raw = result;
         }
-    }
-    if raw == 0 {
-        raw = GetClassLongPtrW(hwnd, GCLP_HICONSM);
-    }
-    if raw == 0 {
-        raw = GetClassLongPtrW(hwnd, GCLP_HICON);
     }
     if raw == 0 {
         return None;
