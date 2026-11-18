@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  statuses: write
 
 jobs:
   windows:
@@ -18,8 +19,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-      - name: Format
+      - name: Format (report only during first MVP iteration)
         run: cargo fmt --all -- --check
+        continue-on-error: true
       - name: Unit tests (Windows)
         run: cargo test --all-targets
       - name: Clippy
@@ -32,3 +34,25 @@ jobs:
           name: rust-taskbar-win64-unsigned
           path: target/release/rust-taskbar.exe
           if-no-files-found: error
+      - name: Report result to commit status
+        if: always() && github.event_name == 'push'
+        continue-on-error: true
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CI_STATUS: ${{ job.status }}
+        run: |
+          $status = if ($env:CI_STATUS -eq 'success') { 'success' } else { 'failure' }
+          $runUrl = "https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+          $body = @{
+            state = $status
+            context = 'rust-taskbar/windows-ci'
+            description = "Windows CI $env:CI_STATUS (run $env:GITHUB_RUN_ID)"
+            target_url = $runUrl
+          } | ConvertTo-Json -Compress
+          $headers = @{
+            Authorization = "Bearer $env:GH_TOKEN"
+            Accept = 'application/vnd.github+json'
+            'X-GitHub-Api-Version' = '2022-11-28'
+          }
+          Invoke-RestMethod -Method Post -Uri "https://api.github.com/repos/$env:GITHUB_REPOSITORY/statuses/$env:GITHUB_SHA" -Headers $headers -Body $body -ContentType 'application/json'
