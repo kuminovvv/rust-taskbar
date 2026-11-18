@@ -89,6 +89,14 @@ pub fn layout(width: i32, height: i32, dpi: u32, window_count: usize) -> Layout 
     Layout { buttons, clock, hidden_windows }
 }
 
+pub fn hit_test(layout: &Layout, x: i32, y: i32) -> Option<Action> {
+    layout
+        .buttons
+        .iter()
+        .find(|button| button.rect.contains(x, y))
+        .map(|button| button.action)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -118,6 +126,18 @@ mod tests {
                 assert!(a.rect.right <= b.rect.left || b.rect.right <= a.rect.left);
             }
         }
+    }
+
+    #[test]
+    fn hit_test_matches_button_and_not_gaps() {
+        let panel = layout(1200, 56, 96, 3);
+        let start = panel.buttons[0];
+        assert_eq!(
+            hit_test(&panel, start.rect.left + 1, start.rect.top + 1),
+            Some(Action::Start)
+        );
+        assert_eq!(hit_test(&panel, 0, 0), None);
+        assert_eq!(hit_test(&panel, start.rect.right, start.rect.top + 1), None);
     }
 
     #[test]
