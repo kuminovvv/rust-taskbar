@@ -50,6 +50,7 @@ struct AppState {
     shell_message: u32,
     dpi: u32,
     hovered: Option<Action>,
+    tracking_mouse: bool,
 }
 
 fn wide(input: &str) -> Vec<u16> {
@@ -363,11 +364,7 @@ unsafe fn resolve_click(hwnd: HWND, state: &AppState, x: i32, y: i32) -> Option<
     let mut client: RECT = zeroed();
     GetClientRect(hwnd, &mut client);
     let layout = model::layout(client.right, client.bottom, state.dpi, state.windows.len());
-    let action = layout
-        .buttons
-        .iter()
-        .find(|button| button.rect.contains(x, y))
-        .map(|button| button.action);
+    let action = model::hit_test(&layout, x, y);
     match action {
         Some(Action::Start) => Some(Command::Start),
         Some(Action::Search) => Some(Command::Search),
@@ -538,11 +535,7 @@ unsafe fn update_hover(hwnd: HWND, state: &mut AppState, x: i32, y: i32) {
     let mut client: RECT = zeroed();
     GetClientRect(hwnd, &mut client);
     let layout = model::layout(client.right, client.bottom, state.dpi, state.windows.len());
-    let next = layout
-        .buttons
-        .iter()
-        .find(|button| button.rect.contains(x, y))
-        .map(|button| button.action);
+    let next = model::hit_test(&layout, x, y);
     if state.hovered != next {
         state.hovered = next;
         InvalidateRect(hwnd, null(), 0);
@@ -580,17 +573,20 @@ unsafe extern "system" fn window_proc(
         WM_MOUSEMOVE => {
             let x = (lparam as u32 as u16 as i16) as i32;
             let y = ((lparam as u32 >> 16) as u16 as i16) as i32;
-            let mut tracking = TRACKMOUSEEVENT {
-                cbSize: size_of::<TRACKMOUSEEVENT>() as u32,
-                dwFlags: TME_LEAVE,
-                hwndTrack: hwnd,
-                dwHoverTime: 0,
-            };
-            TrackMouseEvent(&mut tracking);
+            if !(*state_ptr).tracking_mouse {
+                let mut tracking = TRACKMOUSEEVENT {
+                    cbSize: size_of::<TRACKMOUSEEVENT>() as u32,
+                    dwFlags: TME_LEAVE,
+                    hwndTrack: hwnd,
+                    dwHoverTime: 0,
+                };
+                (*state_ptr).tracking_mouse = TrackMouseEvent(&mut tracking) != 0;
+            }
             update_hover(hwnd, &mut *state_ptr, x, y);
             0
         }
         WM_MOUSELEAVE => {
+            (*state_ptr).tracking_mouse = false;
             if (*state_ptr).hovered.take().is_some() {
                 InvalidateRect(hwnd, null(), 0);
             }
