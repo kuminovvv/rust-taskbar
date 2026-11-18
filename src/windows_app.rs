@@ -27,9 +27,21 @@ const PANEL_WIDTH_DIP: i32 = 940;
 const PANEL_HEIGHT_DIP: i32 = 56;
 const MARGIN_DIP: i32 = 12;
 
+/// An owned copy of another window's icon. Shared class/window handles must
+/// never be passed directly to DestroyIcon.
+struct OwnedIcon(HICON);
+
+impl Drop for OwnedIcon {
+    fn drop(&mut self) {
+        // SAFETY: CopyIcon creates a distinct owned handle.
+        unsafe { DestroyIcon(self.0); }
+    }
+}
+
 struct OpenWindow {
     hwnd: HWND,
     title: String,
+    icon: Option<OwnedIcon>,
 }
 
 #[derive(Default)]
@@ -37,6 +49,7 @@ struct AppState {
     windows: Vec<OpenWindow>,
     shell_message: u32,
     dpi: u32,
+    hovered: Option<Action>,
 }
 
 fn wide(input: &str) -> Vec<u16> {
@@ -177,24 +190,64 @@ unsafe extern "system" fn enumerate_window(hwnd: HWND, parameter: LPARAM) -> i32
     }
     let title = String::from_utf16_lossy(&text[..length as usize]);
     if !title.trim().is_empty() {
-        result.push(OpenWindow { hwnd, title });
+        result.push(OpenWindow { hwnd, title, icon: None });
     }
     1
+}
+
+/// Obtain a small icon without hanging if a target app stops responding.
+/// WM_GETICON is optional; class icons are used as a documented fallback.
+unsafe fn copy_window_icon(hwnd: HWND) -> Option<OwnedIcon> {
+    let mut raw: usize = 0;
+    for icon_kind in [2usize, 0usize, 1usize] {
+        let delivered = SendMessageTimeoutW(
+            hwnd,
+            WM_GETICON,
+            icon_kind,
+            0,
+            SMTO_ABORTIFHUNG | SMTO_BLOCK,
+            30,
+            &mut raw,
+        );
+        if delivered != 0 && raw != 0 {
+            break;
+        }
+    }
+    if raw == 0 {
+        raw = GetClassLongPtrW(hwnd, GCLP_HICONSM);
+    }
+    if raw == 0 {
+        raw = GetClassLongPtrW(hwnd, GCLP_HICON);
+    }
+    if raw == 0 {
+        return None;
+    }
+    let icon = CopyIcon(raw as HICON);
+    (!icon.is_null()).then_some(OwnedIcon(icon))
 }
 
 unsafe fn refresh_windows(hwnd: HWND, state: &mut AppState) {
     let mut windows: Vec<OpenWindow> = Vec::with_capacity(32);
     EnumWindows(Some(enumerate_window), (&mut windows as *mut Vec<OpenWindow>) as isize);
-    // Only invalidate if contents have changed; activation highlighting is updated
-    // separately after shell notifications.
     let changed = windows.len() != state.windows.len()
         || windows
             .iter()
             .zip(state.windows.iter())
             .any(|(a, b)| a.hwnd != b.hwnd || a.title != b.title);
     if changed {
+        // Reuse copied icon handles for unchanged HWNDs. No class/window icon
+        // is destroyed and no WM_GETICON is sent during ordinary WM_PAINT.
+        let mut previous = std::mem::take(&mut state.windows);
+        for window in &mut windows {
+            if let Some(old) = previous.iter_mut().find(|old| old.hwnd == window.hwnd) {
+                window.icon = old.icon.take();
+            } else {
+                window.icon = copy_window_icon(window.hwnd);
+            }
+        }
         state.windows = windows;
     }
+    // The foreground HWND may change even when the window list is identical.
     InvalidateRect(hwnd, null(), 0);
 }
 
