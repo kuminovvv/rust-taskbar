@@ -22,6 +22,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
 const CLASS_NAME: &str = "RustTaskbarPrototypeWindow";
 const CLOCK_TIMER: usize = 1;
+const FALLBACK_TIMER: usize = 2;
 const PANEL_WIDTH_DIP: i32 = 940;
 const PANEL_HEIGHT_DIP: i32 = 56;
 const MARGIN_DIP: i32 = 12;
@@ -107,6 +108,10 @@ pub fn run() -> Result<(), String> {
         }
 
         refresh_windows(hwnd, &mut state);
+        if state.shell_message == 0 {
+            // Only when shell notifications are unavailable: bounded fallback polling.
+            SetTimer(hwnd, FALLBACK_TIMER, 5_000, None);
+        }
         position_window(hwnd, state.dpi);
         schedule_clock(hwnd);
 
@@ -289,33 +294,58 @@ unsafe fn open_start() {
     SendInput(keys.len() as u32, keys.as_ptr(), size_of::<INPUT>() as i32);
 }
 
-unsafe fn handle_click(hwnd: HWND, state: &AppState, x: i32, y: i32) {
+
+#[derive(Clone, Copy)]
+enum Command {
+    Start,
+    Search,
+    AllWindows,
+    Window(HWND),
+    Exit,
+}
+
+/// Resolve the click to a value before calling any Win32 function that may
+/// synchronously re-enter window_proc (DestroyWindow/ShowWindow).
+unsafe fn resolve_click(hwnd: HWND, state: &AppState, x: i32, y: i32) -> Option<Command> {
     let mut client: RECT = zeroed();
     GetClientRect(hwnd, &mut client);
     let layout = model::layout(client.right, client.bottom, state.dpi, state.windows.len());
-    let action = layout.buttons.iter().find(|b| b.rect.contains(x, y)).map(|b| b.action);
+    let action = layout
+        .buttons
+        .iter()
+        .find(|button| button.rect.contains(x, y))
+        .map(|button| button.action);
     match action {
-        Some(Action::Start) => open_start(),
-        Some(Action::Search) => send_shortcut(b'S' as u16),
-        Some(Action::AllWindows) => send_shortcut(0x09), // Win+Tab
-        Some(Action::Window(index)) => {
-            if let Some(window) = state.windows.get(index) {
-                if IsWindow(window.hwnd) != 0 {
-                    if GetForegroundWindow() == window.hwnd && IsIconic(window.hwnd) == 0 {
-                        ShowWindow(window.hwnd, SW_MINIMIZE);
-                    } else {
-                        if IsIconic(window.hwnd) != 0 {
-                            ShowWindow(window.hwnd, SW_RESTORE);
-                        }
-                        SetForegroundWindow(window.hwnd);
-                    }
+        Some(Action::Start) => Some(Command::Start),
+        Some(Action::Search) => Some(Command::Search),
+        Some(Action::AllWindows) => Some(Command::AllWindows),
+        Some(Action::Window(index)) => state.windows.get(index).map(|window| Command::Window(window.hwnd)),
+        Some(Action::Exit) => Some(Command::Exit),
+        None => None,
+    }
+}
+
+unsafe fn execute_command(hwnd: HWND, command: Command) {
+    match command {
+        Command::Start => open_start(),
+        Command::Search => send_shortcut(b'S' as u16),
+        Command::AllWindows => send_shortcut(0x09), // Win+Tab
+        Command::Window(target) => {
+            if IsWindow(target) == 0 {
+                return;
+            }
+            if GetForegroundWindow() == target && IsIconic(target) == 0 {
+                ShowWindow(target, SW_MINIMIZE);
+            } else {
+                if IsIconic(target) != 0 {
+                    ShowWindow(target, SW_RESTORE);
                 }
+                SetForegroundWindow(target);
             }
         }
-        Some(Action::Exit) => {
+        Command::Exit => {
             DestroyWindow(hwnd);
         }
-        None => {}
     }
 }
 
@@ -446,23 +476,28 @@ unsafe extern "system" fn window_proc(
     if state_ptr.is_null() {
         return DefWindowProcW(hwnd, message, wparam, lparam);
     }
-    let state = &mut *state_ptr;
-
-    if state.shell_message != 0 && message == state.shell_message {
-        refresh_windows(hwnd, state);
+    if (*state_ptr).shell_message != 0 && message == (*state_ptr).shell_message {
+        refresh_windows(hwnd, &mut *state_ptr);
         return 0;
     }
 
     match message {
         WM_PAINT => {
-            paint(hwnd, state);
+            paint(hwnd, &*state_ptr);
             0
         }
         WM_ERASEBKGND => 1,
         WM_LBUTTONUP => {
             let x = (lparam as u32 as u16 as i16) as i32;
             let y = ((lparam as u32 >> 16) as u16 as i16) as i32;
-            handle_click(hwnd, state, x, y);
+            let command = resolve_click(hwnd, &*state_ptr, x, y);
+            if let Some(command) = command {
+                execute_command(hwnd, command);
+            }
+            0
+        }
+        WM_TIMER if wparam == FALLBACK_TIMER => {
+            refresh_windows(hwnd, &mut *state_ptr);
             0
         }
         WM_TIMER if wparam == CLOCK_TIMER => {
@@ -472,8 +507,9 @@ unsafe extern "system" fn window_proc(
             0
         }
         WM_DISPLAYCHANGE | WM_SETTINGCHANGE | WM_DPICHANGED => {
-            state.dpi = GetDpiForWindow(hwnd).max(96);
-            position_window(hwnd, state.dpi);
+            let dpi = GetDpiForWindow(hwnd).max(96);
+            (*state_ptr).dpi = dpi;
+            position_window(hwnd, dpi);
             InvalidateRect(hwnd, null(), 0);
             0
         }
@@ -489,7 +525,8 @@ unsafe extern "system" fn window_proc(
         }
         WM_DESTROY => {
             KillTimer(hwnd, CLOCK_TIMER);
-            if state.shell_message != 0 {
+            KillTimer(hwnd, FALLBACK_TIMER);
+            if (*state_ptr).shell_message != 0 {
                 DeregisterShellHookWindow(hwnd);
             }
             PostQuitMessage(0);
