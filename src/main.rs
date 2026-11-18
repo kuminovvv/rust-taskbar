@@ -1,6 +1,8 @@
 //! Rust Taskbar: a safe-to-close floating taskbar prototype for Windows 11.
 //! Explorer remains the system shell and its taskbar stays intact.
 #![cfg_attr(windows, windows_subsystem = "windows")]
+// Treat accidentally unbound Win32 message constants as build errors.
+#![deny(unreachable_patterns, unused_variables)]
 
 mod model;
 
