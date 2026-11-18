@@ -415,6 +415,10 @@ unsafe fn fill(hdc: HDC, rect: &RECT, color: u32) {
 }
 
 unsafe fn label(hdc: HDC, rect: RECT, text: &str, color: u32) {
+    label_with_alignment(hdc, rect, text, color, DT_CENTER);
+}
+
+unsafe fn label_with_alignment(hdc: HDC, rect: RECT, text: &str, color: u32, align: u32) {
     let utf16 = wide(text);
     let mut bounds = rect;
     SetTextColor(hdc, color);
@@ -423,13 +427,14 @@ unsafe fn label(hdc: HDC, rect: RECT, text: &str, color: u32) {
         utf16.as_ptr(),
         -1,
         &mut bounds,
-        DT_SINGLELINE | DT_CENTER | DT_VCENTER | DT_END_ELLIPSIS | DT_NOPREFIX,
+        DT_SINGLELINE | align | DT_VCENTER | DT_END_ELLIPSIS | DT_NOPREFIX,
     );
 }
 
 unsafe fn draw_content(hdc: HDC, state: &AppState, width: i32, height: i32) {
     let background = rgb(23, 27, 36);
     let inactive = rgb(42, 48, 62);
+    let hover = rgb(54, 64, 85);
     let active = rgb(59, 82, 128);
     let text = rgb(230, 234, 246);
     let muted = rgb(170, 178, 192);
@@ -457,9 +462,25 @@ unsafe fn draw_content(hdc: HDC, state: &AppState, width: i32, height: i32) {
             right: button.rect.right,
             bottom: button.rect.bottom,
         };
-        fill(hdc, &bounds, if selected { active } else { inactive });
-        // Leave a little horizontal padding to avoid text touching the edges.
-        let padded = RECT { left: bounds.left + 5, right: bounds.right - 5, ..bounds };
+        fill(
+            hdc,
+            &bounds,
+            if selected { active } else if state.hovered == Some(button.action) { hover } else { inactive },
+        );
+        // Icons are cached and copied once at enumeration; WM_PAINT never
+        // sends a synchronous message to another application's window.
+        let mut padded = RECT { left: bounds.left + 5, right: bounds.right - 5, ..bounds };
+        if let Action::Window(index) = button.action {
+            if let Some(icon) = state.windows[index].icon.as_ref() {
+                let icon_size = model::scale(20, state.dpi);
+                let icon_x = bounds.left + model::scale(9, state.dpi);
+                let icon_y = bounds.top + (bounds.bottom - bounds.top - icon_size) / 2;
+                DrawIconEx(hdc, icon_x, icon_y, icon.0, icon_size, icon_size, 0, null_mut(), DI_NORMAL);
+                padded.left = icon_x + icon_size + model::scale(7, state.dpi);
+                label_with_alignment(hdc, padded, &name, text, DT_LEFT);
+                continue;
+            }
+        }
         label(hdc, padded, &name, text);
     }
 
@@ -512,6 +533,22 @@ unsafe fn paint(hwnd: HWND, state: &AppState) {
     EndPaint(hwnd, &ps);
 }
 
+/// Recompute hovered button only on pointer events. Does not start a timer.
+unsafe fn update_hover(hwnd: HWND, state: &mut AppState, x: i32, y: i32) {
+    let mut client: RECT = zeroed();
+    GetClientRect(hwnd, &mut client);
+    let layout = model::layout(client.right, client.bottom, state.dpi, state.windows.len());
+    let next = layout
+        .buttons
+        .iter()
+        .find(|button| button.rect.contains(x, y))
+        .map(|button| button.action);
+    if state.hovered != next {
+        state.hovered = next;
+        InvalidateRect(hwnd, null(), 0);
+    }
+}
+
 // SAFETY: AppState is a stable Box for the entire message pump lifetime. All
 // window notifications and enumeration run synchronously on the same UI thread.
 unsafe extern "system" fn window_proc(
@@ -540,6 +577,25 @@ unsafe extern "system" fn window_proc(
             0
         }
         WM_ERASEBKGND => 1,
+        WM_MOUSEMOVE => {
+            let x = (lparam as u32 as u16 as i16) as i32;
+            let y = ((lparam as u32 >> 16) as u16 as i16) as i32;
+            let mut tracking = TRACKMOUSEEVENT {
+                cbSize: size_of::<TRACKMOUSEEVENT>() as u32,
+                dwFlags: TME_LEAVE,
+                hwndTrack: hwnd,
+                dwHoverTime: 0,
+            };
+            TrackMouseEvent(&mut tracking);
+            update_hover(hwnd, &mut *state_ptr, x, y);
+            0
+        }
+        WM_MOUSELEAVE => {
+            if (*state_ptr).hovered.take().is_some() {
+                InvalidateRect(hwnd, null(), 0);
+            }
+            0
+        }
         WM_LBUTTONUP => {
             let x = (lparam as u32 as u16 as i16) as i32;
             let y = ((lparam as u32 >> 16) as u16 as i16) as i32;
