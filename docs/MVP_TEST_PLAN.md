@@ -7,7 +7,7 @@
 - Не отключать Explorer, не запускать панель с повышенными правами.
 - Зафиксировать Windows build, процессор, GPU, DPI, количество мониторов, частоту экрана.
 - Проверить наличие штатной панели задач и возможность закрыть нашу панель кнопкой Exit.
-- Команды: \`cargo fmt --all -- --check\`, \`cargo test --all-targets\`, \`cargo clippy --all-targets -- -D warnings\`, \`cargo build --release\`.
+- Команды: `cargo fmt --all -- --check`, `cargo test --all-targets`, `cargo clippy --all-targets -- -D warnings`, `cargo build --release`.
 
 ## Приёмочные сценарии
 
